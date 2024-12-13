@@ -1,6 +1,6 @@
 import streamlit as st
 from langchain.chat_models import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.document_loaders import UnstructuredFileLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings import OpenAIEmbeddings, CacheBackedEmbeddings
@@ -8,6 +8,8 @@ from langchain.storage import LocalFileStore
 from langchain.vectorstores import Chroma
 from langchain.schema.runnable import RunnablePassthrough, RunnableLambda
 from langchain.callbacks.base import BaseCallbackHandler
+from langchain.globals import set_llm_cache
+from langchain.memory import ConversationSummaryBufferMemory
 
 st.set_page_config(
     page_title="Document GPT",
@@ -16,7 +18,8 @@ st.set_page_config(
 
 
 class ChatCallbackHandler(BaseCallbackHandler):
-    message = ""
+    def __init__(self):
+        self.message = ""
 
     def on_llm_start(self, *args, **kwargs):
         self.message_box = st.empty()
@@ -37,6 +40,34 @@ llm = ChatOpenAI(
     ],
 )
 
+memory_llm = ChatOpenAI(temperature=0.1)
+
+chat_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+            You are a helpful assistant. Answer questions using only the following context.
+            and You remember conversations with human.
+            If you don't know the answer just say you don't know, dont't makt it up:
+            -----
+            {context}
+            """,
+        ),
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("human", "{question}"),
+    ]
+)
+
+if "memory" not in st.session_state:
+    st.session_state["memory"] = ConversationSummaryBufferMemory(
+        llm=memory_llm,
+        max_token_limit=150,
+        memory_key="chat_history",
+        return_messages=True,
+    )
+
+memory = st.session_state["memory"]
 
 @st.cache_resource(show_spinner="Embedding file...")
 def embed_file(file):
@@ -80,20 +111,9 @@ def format_doc(documents):
     return "\n\n".join(doc.page_content for doc in documents)
 
 
-prompt = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            """
-            You are a helpful assistant. Answer questions using only the following context.
-            If you don't know the answer just say you don't know, dont't makt it up:
-            -----
-            {context}
-            """,
-        ),
-        ("human", "{question}"),
-    ]
-)
+def memory_load(inputs):
+    return memory.load_memory_variables({})["chat_history"]
+
 
 st.title("Document GPT")
 
@@ -121,12 +141,15 @@ if file:
         chain = (
             {
                 "context": retriever | RunnableLambda(format_doc),
+                "chat_history": RunnableLambda(memory_load),
                 "question": RunnablePassthrough(),
             }
-            | prompt
+            | chat_prompt
             | llm
         )
         with st.chat_message("ai"):
             response = chain.invoke(question)
+        memory.save_context({"input": question}, {"output": response.content})
 else:
     st.session_state["messages"] = []
+    memory.clear()
