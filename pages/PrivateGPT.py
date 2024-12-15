@@ -1,11 +1,9 @@
 import streamlit as st
-
-st.title("Private GPT")import streamlit as st
-from langchain.chat_models import ChatOpenAI
+from langchain.chat_models import ChatOllama
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.document_loaders import UnstructuredFileLoader
 from langchain.text_splitter import CharacterTextSplitter
-from langchain.embeddings import OpenAIEmbeddings, CacheBackedEmbeddings
+from langchain.embeddings import OllamaEmbeddings, CacheBackedEmbeddings
 from langchain.storage import LocalFileStore
 from langchain.vectorstores import Chroma
 from langchain.schema.runnable import RunnablePassthrough, RunnableLambda
@@ -32,22 +30,28 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.response += token
         self.message_box.markdown(self.response)
 
+if "model_name" not in st.session_state:
+    st.session_state["model_name"] = "mistral:latest"
 
-llm = ChatOpenAI(
+llm = ChatOllama(
+    model=st.session_state["model_name"],
     temperature=0.1,
     streaming=True,
     callbacks=[ChatCallbackHandler()],
 )
 
-memory_llm = ChatOpenAI(temperature=0.1)
+memory_llm = ChatOllama(
+    model=st.session_state["model_name"],
+    temperature=0.1,
+)
 
 prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
             """
-            You are a helpful assistant. Answer questions using only the following context.
-            and You remember conversations with human.
+            You are a helpful assistant. Answer questions using only the following context and not your training data.
+            You remember conversations with human.
             If you don't know the answer just say you don't know, dont't makt it
             ------
             {context}            
@@ -57,6 +61,7 @@ prompt = ChatPromptTemplate.from_messages(
         ("human", "{question}"),
     ]
 )
+
 
 @st.cache_resource(show_spinner="Embedding file...")
 def embed_file(file):
@@ -73,11 +78,12 @@ def embed_file(file):
     )
     documents = loader.load_and_split(text_splitter=splitter)
     cache_dir = LocalFileStore(f"./.cache/private_embeddings/{file_name}")
-    embedder = OpenAIEmbeddings()
+    embedder = OllamaEmbeddings(model=st.session_state["model_name"])
     cache_embedder = CacheBackedEmbeddings.from_bytes_store(embedder, cache_dir)
     vectorStore = Chroma.from_documents(documents, cache_embedder)
     retriever = vectorStore.as_retriever()
     return retriever
+
 
 def paint_history():
     for dic_message in st.session_state["messages"]:
@@ -94,8 +100,10 @@ def send_message(message, role, save=True):
         if save:
             save_message(message, role)
 
+
 def format_doc(documents):
     return "\n\n".join(doc.page_content for doc in documents)
+
 
 def memory_load(input):
     return memory.load_memory_variables({})["history"]
@@ -104,15 +112,13 @@ def memory_load(input):
 if "memory" not in st.session_state:
     st.session_state["memory"] = ConversationSummaryBufferMemory(
         llm=memory_llm,
-        max_token_limit=150,
         memory_key="history",
         return_messages=True,
     )
 
 memory = st.session_state["memory"]
 
-
-st.title("Document GPT")
+st.title("Private GPT")
 
 st.markdown(
     """
@@ -132,6 +138,13 @@ if file:
     retriever = embed_file(file)
     send_message("How can I help you?", "ai", save=False)
     paint_history()
+    with st.sidebar:
+        model_name = st.selectbox("Choose offline models", ["mistral", "llama2"])
+        if model_name == "mistral":
+            st.session_state["model_name"] = "mistral:latest"
+        elif model_name == "llama2":
+            st.session_state["model_name"] = "llama2:13b"
+
     answer = st.chat_input("Ask anything about your file....")
     if answer:
         send_message(answer, "human")
@@ -149,4 +162,5 @@ if file:
             memory.save_context({"input": answer}, {"output": response.content})
 else:
     st.session_state["messages"] = []
+    st.session_state["model_name"] = "mistral:latest"
     memory.clear()
