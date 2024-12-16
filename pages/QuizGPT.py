@@ -1,4 +1,5 @@
 import streamlit as st
+import json
 from langchain.chat_models import ChatOpenAI
 from langchain.retrievers import WikipediaRetriever
 from langchain.document_loaders import UnstructuredFileLoader
@@ -6,6 +7,15 @@ from langchain.text_splitter import CharacterTextSplitter
 from langchain.prompts import ChatPromptTemplate
 from langchain.callbacks import StreamingStdOutCallbackHandler
 from langchain.schema.runnable import RunnableLambda
+from langchain.schema import BaseOutputParser
+
+
+class JsonOutputParser(BaseOutputParser):
+    def parse(self, text):
+        text = text.replace("```", "").replace("json", "")
+        return json.loads(text)
+
+output_parser = JsonOutputParser()
 
 st.set_page_config(
     page_title="QuizGpt",
@@ -18,7 +28,7 @@ llm = ChatOpenAI(
     temperature=0.1,
     model="gpt-3.5-turbo-0125",
     streaming=True,
-    callbacks=[StreamingStdOutCallbackHandler()],
+    # callbacks=[StreamingStdOutCallbackHandler()],
 )
 
 
@@ -90,7 +100,7 @@ formatting_prompt = ChatPromptTemplate.from_messages(
             Example Output:
             
             ```json
-            {{ "question": [
+            {{ "questions": [
                     {{
                         "question": "What is the color of the occean?",
                         "answers": [
@@ -176,7 +186,7 @@ formatting_prompt = ChatPromptTemplate.from_messages(
                         ]
                     }}                                                
                 ]
-            }}
+            }}```
 
             Your turn!
 
@@ -242,9 +252,6 @@ else:
 
     start = st.button("Generate Quiz")
     if start:
-        question_response = questions_chain.invoke(docs)
-        formatting_response = formatting_chain.invoke(
-            {"context": question_response.content}
-        )
-        st.write(question_response.content)
-        st.write(formatting_response.content)
+        chain = {"context": questions_chain} | formatting_chain | output_parser
+        response = chain.invoke(docs)
+        st.write(response)
