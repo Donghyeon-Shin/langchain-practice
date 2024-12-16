@@ -15,6 +15,7 @@ class JsonOutputParser(BaseOutputParser):
         text = text.replace("```", "").replace("json", "")
         return json.loads(text)
 
+
 output_parser = JsonOutputParser()
 
 st.set_page_config(
@@ -216,8 +217,22 @@ def split_file(file):
     return documents
 
 
+@st.cache_data(show_spinner="Making quiz...")
+def run_quiz_chain(_docs, topic):
+    chain = {"context": questions_chain} | formatting_chain | output_parser
+    return chain.invoke(_docs)
+
+
+@st.cache_data(show_spinner="Searching wikipedia...")
+def wiki_search(topic):
+    retriever = WikipediaRetriever(top_k_results=5)
+    docs = retriever.get_relevant_documents(topic)
+    return docs
+
+
 with st.sidebar:
     docs = None
+    topic = None
     choice = st.selectbox(
         "Choose what you want to use.",
         (
@@ -234,9 +249,7 @@ with st.sidebar:
     else:
         topic = st.text_input("Search Wikipedia")
         if topic:
-            retriever = WikipediaRetriever(top_k_results=5)
-            with st.status("Searching wikipedia....."):
-                docs = retriever.get_relevant_documents(topic)
+            docs = wiki_search(topic)
 
 if not docs:
     st.markdown(
@@ -249,9 +262,19 @@ if not docs:
         """
     )
 else:
-
-    start = st.button("Generate Quiz")
-    if start:
-        chain = {"context": questions_chain} | formatting_chain | output_parser
-        response = chain.invoke(docs)
-        st.write(response)
+    response = run_quiz_chain(docs, topic if topic else file.name)
+    with st.form("questions_form"):
+        for question in response["questions"]:
+            st.write(question["question"])
+            value = st.radio(
+                "Select an options",
+                [answer["answer"] for answer in question["answers"]],
+                index=None,
+            )
+            if {"answer": value, "correct" : True} in question["answers"]:
+                st.success("Correct!")
+            elif value is not None:
+                for answer in question["answers"]:
+                    if answer["correct"] == True:
+                        st.error(answer["answer"])
+        button = st.form_submit_button()
