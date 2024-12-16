@@ -29,9 +29,8 @@ llm = ChatOpenAI(
     temperature=0.1,
     model="gpt-3.5-turbo-0125",
     streaming=True,
-    # callbacks=[StreamingStdOutCallbackHandler()],
+    callbacks=[StreamingStdOutCallbackHandler()],
 )
-
 
 def format_docs(documents):
     return "\n\n".join(doc.page_content for doc in documents)
@@ -233,6 +232,8 @@ def wiki_search(topic):
 with st.sidebar:
     docs = None
     topic = None
+    file = None
+    
     choice = st.selectbox(
         "Choose what you want to use.",
         (
