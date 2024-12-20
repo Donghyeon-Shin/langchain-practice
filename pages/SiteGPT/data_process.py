@@ -5,6 +5,7 @@ from langchain.vectorstores import FAISS
 from langchain.storage import LocalFileStore
 from langchain.embeddings import OpenAIEmbeddings, CacheBackedEmbeddings
 
+
 def parse_page(soup):
     header = soup.find("header")
     footer = soup.find("footer")

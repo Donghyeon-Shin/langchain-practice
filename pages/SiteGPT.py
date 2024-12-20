@@ -1,18 +1,7 @@
 import streamlit as st
 from pages.SiteGPT.utils import paint_message, send_message
 from pages.SiteGPT.data_process import get_retriever_in_website
-from pages.SiteGPT.chain import invoke_chain
-
-
-# if "memory" not in st.session_state:
-#     st.session_state["memory"] = ConversationSummaryBufferMemory(
-#         llm=common_llm,
-#         memory_key="memory_history",
-#         max_token_limit=150,
-#         return_messages=True,
-#     )
-
-# memory = st.session_state["memory"]
+from pages.SiteGPT.chain import invoke_chain, initialize_memory
 
 st.set_page_config(
     page_title="Site GPT",
@@ -48,7 +37,7 @@ if url:
         question = st.chat_input("Ask any questions in the document!")
         if question:
             send_message(st.session_state["messages"], question, "human")
-            invoke_chain(retriever, question)
-            # memory.save_context({"input" : question, "output" : answer.content})
+            invoke_chain(st.session_state["messages"], retriever, question)
 else:
     st.session_state["messages"] = []
+    initialize_memory()
