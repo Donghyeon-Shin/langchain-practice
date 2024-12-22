@@ -71,7 +71,7 @@ history_prompt = ChatPromptTemplate.from_template(
 
 answers_prompt = ChatPromptTemplate.from_template(
     """
-    Using ONLY the following context answer the user's question. If you can't
+    Using ONLY the following context answer the user's question. If you can't answer,
     Just say you don't know, don't make anyting up.
 
     Then, give a score to the answer between 0 and 5. 0 being not helpful to

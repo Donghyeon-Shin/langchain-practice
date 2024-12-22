@@ -10,12 +10,51 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.document_loaders import TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema.output_parser import StrOutputParser
+from langchain.storage import LocalFileStore
+from langchain.embeddings import OpenAIEmbeddings, CacheBackedEmbeddings
+from langchain.vectorstores import FAISS
+from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
+from langchain.callbacks.base import BaseCallbackHandler
+
+class ChatCallbackHandler(BaseCallbackHandler):
+    def __init__(self):
+        self.response = ""
+
+    def on_llm_start(self, *arg, **kwargs):
+        self.message_box = st.empty()
+    
+    def on_llm_new_token(self, token, *arg, **kwargs):
+        self.response += token
+        self.message_box.markdown(self.response)
+
+has_transcrible = os.path.exists("./.cache/meeting_files/chunks/Bible_summary.txt")
 
 llm = ChatOpenAI(
     temperature=0.1,
 )
 
-has_transcrible = os.path.exists("./.cache/meeting_files/chunks/Bible_summary.txt")
+choose_llm = ChatOpenAI(
+    temperature=0.1,
+    streaming=True,
+    callbacks=[ChatCallbackHandler()]
+)
+
+splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+    chunk_size=1000,
+    chunk_overlap=100,
+)
+
+
+@st.cache_data()
+def embed_file(file_path, file_name):
+    loader = TextLoader(file_path)
+    documents = loader.load_and_split(text_splitter=splitter)
+    cache_dir = LocalFileStore(f"./.cache/meeting_files/embeddings/{file_name}")
+    embedder = OpenAIEmbeddings()
+    cache_embedder = CacheBackedEmbeddings.from_bytes_store(embedder, cache_dir)
+    vectorStore = FAISS.from_documents(documents, cache_embedder)
+    retriever = vectorStore.as_retriever()
+    return retriever
 
 
 @st.cache_data()
@@ -61,6 +100,85 @@ def cut_audio_in_chunks(audio_path, chunk_size, chunks_folder):
         end_time = (i + 1) * chunk_len + chunk_overlap
         chunk = track[start_time:end_time]
         chunk.export(f"./{chunks_folder}/chunk_{i}.mp3", format="mp3")
+
+
+def get_answers(inputs):
+    docs = inputs["docs"]
+    question = inputs["question"]
+    answer_prompt = ChatPromptTemplate.from_template(
+        """
+            Using ONLY the following context answer the user's question. If you can't answer,
+            JUST say you don't know. don't make anything up.
+
+            Then, give a score to the answer between 0 and 5. 0 being not helpful to the user and 5 being helpful to the user.
+
+            Make sure to include the answer's score.
+            ONLY one result should be output.
+
+            Content : {context}
+
+            Examples:
+
+            Question: How far away the moon?
+            Answer: The moon is 384,400 km away.
+            Score: 5
+
+            Question: How far away is the sun?
+            Answer: I don't know
+            Score: 0
+
+            Your turn!
+
+            Question : {question}
+            """
+    )
+
+    answer_chain = answer_prompt | llm | StrOutputParser()
+
+    return {
+        "question": question,
+        "answers": [
+            answer_chain.invoke(
+                {
+                    "context": doc.page_content,
+                    "question": question,
+                }
+            )
+            for doc in docs
+        ],
+    }
+
+
+def choose_answer(inputs):
+    question = inputs["question"]
+    answers = inputs["answers"]
+
+    format_answers = "\n\n".join(answer for answer in answers)
+
+    choose_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                """
+                Use ONLY the following pre-existing answers to the user's question.
+
+                Use the answers that have the highest score (more helpful) and favor the most recent ones.
+
+                Return the sources of the answers as they are, do not change them.
+
+                You must print out only one answer. and Don't print out the score
+
+                Answer: {answers}
+                """,
+            ),
+            ("human", "{question}"),
+        ]
+    )
+
+    choose_chain = choose_prompt | choose_llm | StrOutputParser()
+
+    respose = choose_chain.invoke({"answers" : format_answers, "question" : question})
+    return respose
 
 
 st.set_page_config(
@@ -114,10 +232,6 @@ if video:
         if summary_start_button:
             loader_path = "./.cache/meeting_files/Bible_small_summary.txt"
             loader = TextLoader(loader_path)
-            splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-                chunk_size=1000,
-                chunk_overlap=100,
-            )
             docs = loader.load_and_split(text_splitter=splitter)
 
             first_summary_prompt = ChatPromptTemplate.from_template(
@@ -157,3 +271,23 @@ if video:
                     )
                 st.write(summary)
             st.write(summary)
+
+    with qa_tab:
+        retriever = embed_file(transcribe_path, video.name)
+
+        docs = retriever.invoke("Dose he talk about the bible?")
+
+        question = st.text_input("Answer anyting about the video")
+
+        if question:
+            with st.chat_message("ai"):
+                research_chain = (
+                    {
+                        "docs": retriever,
+                        "question": RunnablePassthrough(),
+                    }
+                    | RunnableLambda(get_answers)
+                    | RunnableLambda(choose_answer)
+                )
+
+                research_chain.invoke(question)
