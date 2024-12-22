@@ -1,5 +1,4 @@
 import streamlit as st
-import json
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -48,6 +47,7 @@ history_prompt = ChatPromptTemplate.from_template(
     Answer : Tbilisi Source:https://en.wikipedia.org/wiki/Capital_of_Georgia Date:2022-08-22
 
     examples_3
+    History:
     human: When was Avator released?
     ai: 2009 Source:https://en.wikipedia.org/wiki/Avatar_(franchise) Date:2022-12-18
     
@@ -185,7 +185,6 @@ def choose_answer(inputs):
 def format_message(messages):
     history = ""
     i = 0
-    st.write()
     for message in messages:
         if i is not len(messages) - 1:
             history += f"{message['role']} : {message['message']}\n"
