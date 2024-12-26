@@ -14,7 +14,7 @@ llm = ChatOpenAI(temperature=0.1, model_name="gpt-3.5-turbo-0125",)
 alpha_vantage_api_key = os.environ.get("ALPHA_VANTAGE_API_KEY")
 
 
-class CompanyOverviewToolArgsSchema(BaseModel):
+class CompanyStockSearchArgsSchema(BaseModel):
     symbol: str = Field(description="Stock symbol of the company.Example: AAPL, TSLA")
 
 
@@ -30,7 +30,7 @@ class CompanyStackPerformanceTool(BaseTool):
     Use this to get the weekly performance of a company stock.
     You should enter a stock symbol.
     """
-    args_schema: Type[CompanyOverviewToolArgsSchema] = CompanyOverviewToolArgsSchema
+    args_schema: Type[CompanyStockSearchArgsSchema] = CompanyStockSearchArgsSchema
 
     def _run(self, symbol):
         r = requests.get(
@@ -48,7 +48,7 @@ class CompanyIncomeStatementTool(BaseTool):
     Use this to get an income statement of a company.
     You should enter a stock symbol.
     """
-    args_schema: Type[CompanyOverviewToolArgsSchema] = CompanyOverviewToolArgsSchema
+    args_schema: Type[CompanyStockSearchArgsSchema] = CompanyStockSearchArgsSchema
 
     def _run(self, symbol):
         r = requests.get(
@@ -65,7 +65,7 @@ class CompanyOverviewTool(BaseTool):
     Use this to get an overview of the financials of the company.
     You should enter a stock symbol.
     """
-    args_schema: Type[CompanyOverviewToolArgsSchema] = CompanyOverviewToolArgsSchema
+    args_schema: Type[CompanyStockSearchArgsSchema] = CompanyStockSearchArgsSchema
 
     def _run(self, symbol):
         r = requests.get(
